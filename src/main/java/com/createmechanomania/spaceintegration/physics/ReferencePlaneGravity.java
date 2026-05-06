@@ -1,8 +1,10 @@
 package com.createmechanomania.spaceintegration.physics;
 
 import com.createmechanomania.spaceintegration.config.SpaceIntegrationConfig;
+import dev.ryanhcode.sable.mixinterface.EntityExtension;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -20,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ReferencePlaneGravity {
     private static final double MIN_ACCELERATION = 1.0E-6D;
     private static final double MIN_VECTOR = 1.0E-8D;
-    private static final double SECONDS_PER_TICK = 1.0D / 20.0D;
+    private static final double MAX_CARRIER_STEP = 5.0D;
     private static final int SUPPORT_GRACE_TICKS = 4;
     private static final Map<UUID, SurfaceSupportState> SURFACE_SUPPORT_STATES = new ConcurrentHashMap<>();
 
@@ -65,7 +67,7 @@ public final class ReferencePlaneGravity {
         final Vec3 currentDelta = entity.getDeltaMovement();
         final Vector3d velocity = new Vector3d(currentDelta.x, currentDelta.y, currentDelta.z);
         boolean changed = applyArtificialDown(livingEntity, sourceSubLevel, down, supportUp, velocity);
-        if (surfaceSupport) {
+        if (surfaceSupport && !(livingEntity instanceof ServerPlayer)) {
             changed |= matchSupportedFrameVelocity(livingEntity, bodySubLevel, sourceSubLevel, supportUp, velocity);
         }
 
@@ -73,6 +75,9 @@ public final class ReferencePlaneGravity {
         if (changed) {
             livingEntity.setDeltaMovement(velocity.x, velocity.y, velocity.z);
             livingEntity.hasImpulse = true;
+        }
+        if (surfaceSupport && livingEntity instanceof final ServerPlayer serverPlayer) {
+            carrySupportedPlayer(serverPlayer, bodySubLevel, sourceSubLevel, supportUp);
         }
     }
 
@@ -119,23 +124,13 @@ public final class ReferencePlaneGravity {
     }
 
     private static boolean matchSupportedFrameVelocity(final Entity entity, final ServerSubLevel bodySubLevel, final ServerSubLevel sourceSubLevel, final Vector3dc supportUp, final Vector3d velocity) {
-        final ServerSubLevel motionSubLevel = getCarrierMotionSubLevel(bodySubLevel, sourceSubLevel);
-        if (motionSubLevel == null) {
-            return false;
-        }
-
-        final SableSpacePhysics.FrameMotion motion = SableSpacePhysics.getFrameMotion(motionSubLevel);
-        if (motion == null) {
-            return false;
-        }
-
         final Vector3d supportNormal = new Vector3d(supportUp);
         if (supportNormal.lengthSquared() <= MIN_VECTOR) {
             return false;
         }
         supportNormal.normalize();
 
-        final Vector3d carrierVelocity = getCarrierVelocity(entity, motionSubLevel, motion, new Vector3d());
+        final Vector3d carrierVelocity = getCarrierFrameDelta(entity, bodySubLevel, sourceSubLevel, new Vector3d());
         projectOntoPlane(carrierVelocity, supportNormal);
         if (carrierVelocity.lengthSquared() <= MIN_VECTOR) {
             return false;
@@ -157,19 +152,46 @@ public final class ReferencePlaneGravity {
         return true;
     }
 
-    private static @Nullable ServerSubLevel getCarrierMotionSubLevel(final ServerSubLevel bodySubLevel, final ServerSubLevel sourceSubLevel) {
-        if (SableSpacePhysics.getFrameMotion(bodySubLevel) != null) {
-            return bodySubLevel;
+    private static boolean carrySupportedPlayer(final ServerPlayer player, final ServerSubLevel bodySubLevel, final ServerSubLevel sourceSubLevel, final Vector3dc supportUp) {
+        final Vector3d supportNormal = new Vector3d(supportUp);
+        if (supportNormal.lengthSquared() <= MIN_VECTOR) {
+            return false;
         }
-        return sourceSubLevel.getUniqueId().equals(bodySubLevel.getUniqueId()) || SableSpacePhysics.getFrameMotion(sourceSubLevel) == null ? null : sourceSubLevel;
+        supportNormal.normalize();
+
+        final Vector3d carrierStep = getCarrierFrameDelta(player, bodySubLevel, sourceSubLevel, new Vector3d());
+        projectOntoPlane(carrierStep, supportNormal);
+        final double carrierStepLengthSquared = carrierStep.lengthSquared();
+        if (carrierStepLengthSquared <= MIN_VECTOR || carrierStepLengthSquared > MAX_CARRIER_STEP * MAX_CARRIER_STEP) {
+            return false;
+        }
+
+        final Vec3 requestedStep = new Vec3(carrierStep.x, carrierStep.y, carrierStep.z);
+        final Vec3 resolvedStep = ((EntityExtension) player).sable$vanillaCollide(requestedStep);
+        if (resolvedStep.lengthSqr() <= MIN_VECTOR) {
+            return false;
+        }
+
+        player.setPos(player.position().add(resolvedStep));
+        player.hasImpulse = true;
+        return true;
     }
 
-    private static Vector3d getCarrierVelocity(final Entity entity, final ServerSubLevel motionSubLevel, final SableSpacePhysics.FrameMotion motion, final Vector3d destination) {
-        final Vector3d globalPosition = SableSpacePhysics.getGlobalPosition(entity, motionSubLevel, new Vector3d());
-        final Vector3d radius = globalPosition.sub(motionSubLevel.logicalPose().position(), new Vector3d());
-        final Vector3d angularVelocity = motion.angularVelocity(new Vector3d());
-        final Vector3d angularCarrier = angularVelocity.cross(radius, new Vector3d());
-        return motion.linearVelocity(destination).add(angularCarrier).mul(SECONDS_PER_TICK);
+    private static Vector3d getCarrierFrameDelta(final Entity entity, final ServerSubLevel bodySubLevel, final ServerSubLevel sourceSubLevel, final Vector3d destination) {
+        if (!sourceSubLevel.getUniqueId().equals(bodySubLevel.getUniqueId())) {
+            getFrameDelta(entity, sourceSubLevel, destination);
+            if (destination.lengthSquared() > MIN_VECTOR) {
+                return destination;
+            }
+        }
+        return getFrameDelta(entity, bodySubLevel, destination);
+    }
+
+    private static Vector3d getFrameDelta(final Entity entity, final ServerSubLevel subLevel, final Vector3d destination) {
+        final Vector3d globalPosition = SableSpacePhysics.getGlobalPosition(entity, subLevel, new Vector3d());
+        final Vector3d previousLocalPosition = subLevel.lastPose().transformPositionInverse(globalPosition, new Vector3d());
+        subLevel.logicalPose().transformPosition(previousLocalPosition, destination);
+        return destination.sub(globalPosition);
     }
 
     private static Vector3d projectOntoPlane(final Vector3d vector, final Vector3dc normal) {

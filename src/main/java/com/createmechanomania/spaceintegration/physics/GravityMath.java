@@ -79,11 +79,46 @@ public final class GravityMath {
         pose.orientation().transform(baseUp);
         baseUp.normalize();
 
-        final Quaterniond correction = new Quaterniond().rotationTo(baseUp, normalizedTargetUp);
+        final Quaterniond correction = getStableRotationTo(pose, baseUp, normalizedTargetUp, new Quaterniond());
         destination.set(correction);
         destination.mul(pose.orientation());
         destination.normalize();
         return true;
+    }
+
+    private static Quaterniond getStableRotationTo(final Pose3dc pose, final Vector3dc from, final Vector3dc to, final Quaterniond destination) {
+        final double dot = Math.max(-1.0D, Math.min(1.0D, from.dot(to)));
+        if (dot > 1.0D - 1.0E-6D) {
+            return destination.identity();
+        }
+        if (dot < -1.0D + 1.0E-6D) {
+            final Vector3d axis = getStablePerpendicularAxis(pose, from, new Vector3d());
+            return destination.rotationAxis(Math.PI, axis.x, axis.y, axis.z);
+        }
+        return destination.rotationTo(from, to);
+    }
+
+    private static Vector3d getStablePerpendicularAxis(final Pose3dc pose, final Vector3dc from, final Vector3d destination) {
+        destination.set(1.0D, 0.0D, 0.0D);
+        pose.orientation().transform(destination);
+        destination.fma(-destination.dot(from), from);
+        if (destination.lengthSquared() >= MIN_AXIS_LENGTH) {
+            return destination.normalize();
+        }
+
+        destination.set(0.0D, 0.0D, 1.0D);
+        pose.orientation().transform(destination);
+        destination.fma(-destination.dot(from), from);
+        if (destination.lengthSquared() >= MIN_AXIS_LENGTH) {
+            return destination.normalize();
+        }
+
+        destination.set(1.0D, 0.0D, 0.0D);
+        destination.fma(-destination.dot(from), from);
+        if (destination.lengthSquared() >= MIN_AXIS_LENGTH) {
+            return destination.normalize();
+        }
+        return destination.set(0.0D, 0.0D, 1.0D);
     }
 
     private static boolean getLocalDown(final Pose3dc pose, final Vector3d destination) {
