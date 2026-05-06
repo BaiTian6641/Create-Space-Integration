@@ -54,6 +54,7 @@ public final class SableSpacePhysics {
     private static final String GRAVITY_RADIUS_TAG = "gravity_radius";
     private static final String GRAVITY_AXIS_ORIGIN_TAG = "gravity_axis_origin";
     private static final String GRAVITY_AXIS_DIRECTION_TAG = "gravity_axis_direction";
+    private static final String SOURCE_SUB_LEVEL_TAG = "source_sublevel";
     private static final double STATION_KEEPING_DAMPING = 0.35;
     private static final double MAX_DAMPING_STEP = 0.18;
     private static final Map<ServerLevel, LevelTracker> TRACKERS = new ConcurrentHashMap<>();
@@ -96,6 +97,7 @@ public final class SableSpacePhysics {
         integrationTag.putBoolean(STATION_KEEPING_TAG, stationKeeping);
         integrationTag.putBoolean(REFERENCE_PLANE_TAG, true);
         integrationTag.putBoolean(VIEW_ALIGNMENT_TAG, SpaceIntegrationConfig.viewAlignmentDefaultEnabled());
+        integrationTag.putString(SOURCE_SUB_LEVEL_TAG, subLevel.getUniqueId().toString());
         ensureDefaultFeatureTags(integrationTag);
         getTracker(subLevel).optedIn.add(subLevel.getUniqueId());
         syncViewAlignmentState(subLevel);
@@ -135,6 +137,7 @@ public final class SableSpacePhysics {
         integrationTag.putDouble(GRAVITY_RADIUS_TAG, clamp(gravityRadius, 0.0D, 512.0D));
         putVector(integrationTag, GRAVITY_AXIS_ORIGIN_TAG, axisOrigin);
         putVector(integrationTag, GRAVITY_AXIS_DIRECTION_TAG, normalizeAxis(axisDirection));
+        integrationTag.putString(SOURCE_SUB_LEVEL_TAG, subLevel.getUniqueId().toString());
         getTracker(subLevel).optedIn.add(subLevel.getUniqueId());
         syncViewAlignmentState(subLevel);
         return true;
@@ -144,6 +147,7 @@ public final class SableSpacePhysics {
         final CompoundTag integrationTag = getOrCreateIntegrationTag(subLevel);
         integrationTag.putBoolean(OPT_IN_TAG, true);
         ensureDefaultFeatureTags(integrationTag);
+        integrationTag.putString(SOURCE_SUB_LEVEL_TAG, subLevel.getUniqueId().toString());
         integrationTag.putString(GRAVITY_MODE_TAG, gravityMode.id());
         getTracker(subLevel).optedIn.add(subLevel.getUniqueId());
         syncViewAlignmentState(subLevel);
@@ -154,6 +158,7 @@ public final class SableSpacePhysics {
         final CompoundTag integrationTag = getOrCreateIntegrationTag(subLevel);
         integrationTag.putBoolean(OPT_IN_TAG, true);
         ensureDefaultFeatureTags(integrationTag);
+        integrationTag.putString(SOURCE_SUB_LEVEL_TAG, subLevel.getUniqueId().toString());
         integrationTag.putDouble(GRAVITY_STRENGTH_TAG, clamp(gravityStrength, 0.0D, 4.0D));
         getTracker(subLevel).optedIn.add(subLevel.getUniqueId());
         syncViewAlignmentState(subLevel);
@@ -164,6 +169,7 @@ public final class SableSpacePhysics {
         final CompoundTag integrationTag = getOrCreateIntegrationTag(subLevel);
         integrationTag.putBoolean(OPT_IN_TAG, true);
         ensureDefaultFeatureTags(integrationTag);
+        integrationTag.putString(SOURCE_SUB_LEVEL_TAG, subLevel.getUniqueId().toString());
         integrationTag.putDouble(GRAVITY_RADIUS_TAG, clamp(gravityRadius, 0.0D, 512.0D));
         getTracker(subLevel).optedIn.add(subLevel.getUniqueId());
         syncViewAlignmentState(subLevel);
@@ -174,6 +180,7 @@ public final class SableSpacePhysics {
         final CompoundTag integrationTag = getOrCreateIntegrationTag(subLevel);
         integrationTag.putBoolean(OPT_IN_TAG, true);
         ensureDefaultFeatureTags(integrationTag);
+        integrationTag.putString(SOURCE_SUB_LEVEL_TAG, subLevel.getUniqueId().toString());
         putVector(integrationTag, GRAVITY_AXIS_ORIGIN_TAG, axisOrigin);
         putVector(integrationTag, GRAVITY_AXIS_DIRECTION_TAG, normalizeAxis(axisDirection));
         getTracker(subLevel).optedIn.add(subLevel.getUniqueId());
@@ -186,6 +193,7 @@ public final class SableSpacePhysics {
         integrationTag.putBoolean(OPT_IN_TAG, true);
         integrationTag.putBoolean(STATION_KEEPING_TAG, enabled);
         ensureDefaultFeatureTags(integrationTag);
+        integrationTag.putString(SOURCE_SUB_LEVEL_TAG, subLevel.getUniqueId().toString());
         getTracker(subLevel).optedIn.add(subLevel.getUniqueId());
         return true;
     }
@@ -195,6 +203,7 @@ public final class SableSpacePhysics {
         integrationTag.putBoolean(OPT_IN_TAG, true);
         integrationTag.putBoolean(REFERENCE_PLANE_TAG, enabled);
         ensureDefaultFeatureTags(integrationTag);
+        integrationTag.putString(SOURCE_SUB_LEVEL_TAG, subLevel.getUniqueId().toString());
         getTracker(subLevel).optedIn.add(subLevel.getUniqueId());
         syncViewAlignmentState(subLevel);
         return true;
@@ -205,6 +214,7 @@ public final class SableSpacePhysics {
         integrationTag.putBoolean(OPT_IN_TAG, true);
         integrationTag.putBoolean(VIEW_ALIGNMENT_TAG, enabled);
         ensureDefaultFeatureTags(integrationTag);
+        integrationTag.putString(SOURCE_SUB_LEVEL_TAG, subLevel.getUniqueId().toString());
         getTracker(subLevel).optedIn.add(subLevel.getUniqueId());
         syncViewAlignmentState(subLevel);
         return true;
@@ -290,14 +300,11 @@ public final class SableSpacePhysics {
         if (subLevel.isRemoved()) {
             return null;
         }
-        if (predicate.test(subLevel)) {
-            return subLevel;
-        }
 
         final LevelTracker tracker = TRACKERS.get(subLevel.getLevel());
         final ServerSubLevelContainer container = SubLevelContainer.getContainer(subLevel.getLevel());
         if (tracker == null || container == null) {
-            return null;
+            return predicate.test(subLevel) ? subLevel : null;
         }
         return tracker.resolveAttachedSource(container, subLevel, predicate);
     }
@@ -416,7 +423,7 @@ public final class SableSpacePhysics {
         }
 
         final Vector3d targetUp = down.negate(new Vector3d()).normalize();
-        return GravityMath.getReferenceFrameOrientationFromUp(bodySubLevel.logicalPose(), targetUp, destination) ? destination : null;
+        return GravityMath.getReferenceFrameOrientationFromUp(sourceSubLevel.logicalPose(), targetUp, destination) ? destination : null;
     }
 
     public static Vector3d getLocalPosition(final Entity entity, final ServerSubLevel subLevel, final Vector3d destination) {
@@ -505,6 +512,9 @@ public final class SableSpacePhysics {
         if (!integrationTag.contains(GRAVITY_AXIS_DIRECTION_TAG, Tag.TAG_COMPOUND)) {
             putVector(integrationTag, GRAVITY_AXIS_DIRECTION_TAG, new Vector3d(0.0D, 1.0D, 0.0D));
         }
+        if (!integrationTag.contains(SOURCE_SUB_LEVEL_TAG, Tag.TAG_STRING)) {
+            integrationTag.putString(SOURCE_SUB_LEVEL_TAG, "");
+        }
     }
 
     private static boolean getBooleanOrDefault(final CompoundTag tag, final String key, final boolean fallback) {
@@ -537,6 +547,22 @@ public final class SableSpacePhysics {
         }
         final CompoundTag vectorTag = tag.getCompound(key);
         return fallback.set(vectorTag.getDouble("x"), vectorTag.getDouble("y"), vectorTag.getDouble("z"));
+    }
+
+    private static @Nullable UUID readSourceSubLevelId(final ServerSubLevel subLevel) {
+        final CompoundTag integrationTag = getIntegrationTag(subLevel);
+        if (integrationTag == null || !integrationTag.contains(SOURCE_SUB_LEVEL_TAG, Tag.TAG_STRING)) {
+            return null;
+        }
+        final String sourceId = integrationTag.getString(SOURCE_SUB_LEVEL_TAG);
+        if (sourceId.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(sourceId);
+        } catch (final IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     private static void syncViewAlignmentState(final ServerSubLevel subLevel) {
@@ -731,10 +757,51 @@ public final class SableSpacePhysics {
         }
 
         private @Nullable ServerSubLevel resolveAttachedSource(final ServerSubLevelContainer container, final ServerSubLevel seedSubLevel, final Predicate<ServerSubLevel> predicate) {
-            for (final ServerSubLevel subLevel : this.getDockComponent(container, seedSubLevel)) {
+            final List<ServerSubLevel> component = this.getDockComponent(container, seedSubLevel);
+            final ServerSubLevel explicitSource = this.resolveExplicitSource(container, component, seedSubLevel, predicate);
+            if (explicitSource != null) {
+                return explicitSource;
+            }
+
+            component.sort(Comparator.comparing(subLevel -> subLevel.getUniqueId().toString()));
+            for (final ServerSubLevel subLevel : component) {
                 if (predicate.test(subLevel)) {
                     return subLevel;
                 }
+            }
+            return null;
+        }
+
+        private @Nullable ServerSubLevel resolveExplicitSource(final ServerSubLevelContainer container, final List<ServerSubLevel> component, final ServerSubLevel seedSubLevel, final Predicate<ServerSubLevel> predicate) {
+            final Set<UUID> componentIds = new HashSet<>();
+            for (final ServerSubLevel subLevel : component) {
+                componentIds.add(subLevel.getUniqueId());
+            }
+
+            final ServerSubLevel seedSource = this.resolveTaggedSource(container, componentIds, seedSubLevel, predicate);
+            if (seedSource != null) {
+                return seedSource;
+            }
+
+            component.sort(Comparator.comparing(subLevel -> subLevel.getUniqueId().toString()));
+            for (final ServerSubLevel subLevel : component) {
+                final ServerSubLevel taggedSource = this.resolveTaggedSource(container, componentIds, subLevel, predicate);
+                if (taggedSource != null) {
+                    return taggedSource;
+                }
+            }
+            return null;
+        }
+
+        private @Nullable ServerSubLevel resolveTaggedSource(final ServerSubLevelContainer container, final Set<UUID> componentIds, final ServerSubLevel subLevel, final Predicate<ServerSubLevel> predicate) {
+            final UUID sourceId = readSourceSubLevelId(subLevel);
+            if (sourceId == null || !componentIds.contains(sourceId)) {
+                return null;
+            }
+
+            final SubLevel source = container.getSubLevel(sourceId);
+            if (source instanceof final ServerSubLevel sourceSubLevel && !sourceSubLevel.isRemoved() && predicate.test(sourceSubLevel)) {
+                return sourceSubLevel;
             }
             return null;
         }
@@ -824,6 +891,9 @@ public final class SableSpacePhysics {
             childTag.putDouble(GRAVITY_RADIUS_TAG, parentTag != null && parentTag.contains(GRAVITY_RADIUS_TAG, Tag.TAG_DOUBLE) ? parentTag.getDouble(GRAVITY_RADIUS_TAG) : SpaceIntegrationConfig.stationControllerDefaultRadius());
             putVector(childTag, GRAVITY_AXIS_ORIGIN_TAG, readVector(parentTag, GRAVITY_AXIS_ORIGIN_TAG, new Vector3d()));
             putVector(childTag, GRAVITY_AXIS_DIRECTION_TAG, readVector(parentTag, GRAVITY_AXIS_DIRECTION_TAG, new Vector3d(0.0D, 1.0D, 0.0D)));
+            childTag.putString(SOURCE_SUB_LEVEL_TAG, parentTag != null && parentTag.contains(SOURCE_SUB_LEVEL_TAG, Tag.TAG_STRING) && !parentTag.getString(SOURCE_SUB_LEVEL_TAG).isBlank()
+                    ? parentTag.getString(SOURCE_SUB_LEVEL_TAG)
+                    : parent.getUniqueId().toString());
             this.optedIn.add(child.getUniqueId());
             syncViewAlignmentState(child);
         }

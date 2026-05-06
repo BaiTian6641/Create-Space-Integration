@@ -37,7 +37,7 @@ public final class ClientReferenceFrameOrientation {
             return null;
         }
 
-        final Pose3dc pose = subLevel.renderPose(partialTicks);
+        final Pose3dc pose = sourceSubLevel.renderPose(partialTicks);
         final Vector3d targetUp = getEntityUp(entity, subLevel, sourceSubLevel, state, partialTicks, new Vector3d());
         if (targetUp == null) {
             return null;
