@@ -18,19 +18,25 @@ import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.entity_collision.SubLevelEntityCollision;
 import dev.ryanhcode.sable.sublevel.storage.SubLevelRemovalReason;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Quaterniond;
 import org.joml.Vector3d;
 import org.joml.Vector3dc;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -276,11 +282,51 @@ public final class SableSpacePhysics {
         return resolveAttachedSource(subLevel, SableSpacePhysics::isViewAlignmentActive);
     }
 
+    public static @Nullable ServerSubLevel resolveStationKeepingSource(final ServerSubLevel subLevel) {
+        return resolveAttachedSource(subLevel, candidate -> isOptedIn(candidate) && isStationKeeping(candidate));
+    }
+
     private static @Nullable ServerSubLevel resolveAttachedSource(final ServerSubLevel subLevel, final Predicate<ServerSubLevel> predicate) {
         if (subLevel.isRemoved()) {
             return null;
         }
-        return predicate.test(subLevel) ? subLevel : null;
+        if (predicate.test(subLevel)) {
+            return subLevel;
+        }
+
+        final LevelTracker tracker = TRACKERS.get(subLevel.getLevel());
+        final ServerSubLevelContainer container = SubLevelContainer.getContainer(subLevel.getLevel());
+        if (tracker == null || container == null) {
+            return null;
+        }
+        return tracker.resolveAttachedSource(container, subLevel, predicate);
+    }
+
+    public static void rememberDockConnection(final BlockEntity firstConnector, final BlockEntity secondConnector) {
+        if (!(firstConnector.getLevel() instanceof final ServerLevel level) || secondConnector.getLevel() != level) {
+            return;
+        }
+
+        final ServerSubLevel firstSubLevel = findBlockEntitySubLevel(firstConnector);
+        final ServerSubLevel secondSubLevel = findBlockEntitySubLevel(secondConnector);
+        if (firstSubLevel == null || secondSubLevel == null || firstSubLevel.getUniqueId().equals(secondSubLevel.getUniqueId())) {
+            return;
+        }
+
+        getTracker(firstSubLevel).rememberDockConnection(firstSubLevel, firstConnector.getBlockPos(), secondSubLevel, secondConnector.getBlockPos());
+    }
+
+    public static void forgetDockConnection(final BlockEntity connector, @Nullable final UUID otherSubLevelId, @Nullable final BlockPos otherConnectorPosition) {
+        if (!(connector.getLevel() instanceof ServerLevel)) {
+            return;
+        }
+
+        final ServerSubLevel subLevel = findBlockEntitySubLevel(connector);
+        if (subLevel == null) {
+            return;
+        }
+
+        getTracker(subLevel).forgetDockConnection(subLevel, connector.getBlockPos(), otherSubLevelId, otherConnectorPosition);
     }
 
     public static @Nullable ServerSubLevel findEntitySubLevel(final Entity entity) {
@@ -315,6 +361,14 @@ public final class SableSpacePhysics {
             }
         }
         return null;
+    }
+
+    private static @Nullable ServerSubLevel findBlockEntitySubLevel(final BlockEntity blockEntity) {
+        if (!(blockEntity.getLevel() instanceof ServerLevel)) {
+            return null;
+        }
+        final SubLevel subLevel = Sable.HELPER.getContaining(blockEntity);
+        return subLevel instanceof final ServerSubLevel serverSubLevel && !serverSubLevel.isRemoved() ? serverSubLevel : null;
     }
 
     public static Vector3d getReferencePlaneDown(final ServerSubLevel subLevel, final Vector3d destination) {
@@ -527,7 +581,15 @@ public final class SableSpacePhysics {
     }
 
     private static void syncViewAlignmentComponent(final ServerSubLevelContainer container, final ServerSubLevel seedSubLevel) {
-        syncResolvedViewAlignmentState(seedSubLevel);
+        final LevelTracker tracker = TRACKERS.get(seedSubLevel.getLevel());
+        if (tracker == null) {
+            syncResolvedViewAlignmentState(seedSubLevel);
+            return;
+        }
+
+        for (final ServerSubLevel subLevel : tracker.getDockComponent(container, seedSubLevel)) {
+            syncResolvedViewAlignmentState(subLevel);
+        }
     }
 
     private static boolean syncResolvedViewAlignmentState(final ServerSubLevel targetSubLevel) {
@@ -596,6 +658,7 @@ public final class SableSpacePhysics {
         private final Set<UUID> optedIn = ConcurrentHashMap.newKeySet();
         private final Set<UUID> pending = ConcurrentHashMap.newKeySet();
         private final Set<UUID> syncedViewTargets = ConcurrentHashMap.newKeySet();
+        private final Set<DockConnection> dockConnections = ConcurrentHashMap.newKeySet();
         private final Map<UUID, FrameMotion> frameMotions = new ConcurrentHashMap<>();
         private int syncTicks;
 
@@ -632,7 +695,88 @@ public final class SableSpacePhysics {
                 this.pending.remove(subLevel.getUniqueId());
                 this.syncedViewTargets.remove(subLevel.getUniqueId());
                 this.frameMotions.remove(subLevel.getUniqueId());
+                this.forgetDockConnectionsFor(subLevel.getUniqueId());
             }
+        }
+
+        private void rememberDockConnection(final ServerSubLevel firstSubLevel, final BlockPos firstConnectorPosition, final ServerSubLevel secondSubLevel, final BlockPos secondConnectorPosition) {
+            final DockConnection connection = DockConnection.of(firstSubLevel.getUniqueId(), firstConnectorPosition, secondSubLevel.getUniqueId(), secondConnectorPosition);
+            if (this.dockConnections.add(connection)) {
+                final ServerSubLevelContainer container = SubLevelContainer.getContainer(this.level);
+                if (container != null) {
+                    syncViewAlignmentComponent(container, firstSubLevel);
+                    syncViewAlignmentComponent(container, secondSubLevel);
+                }
+            }
+        }
+
+        private void forgetDockConnection(final ServerSubLevel subLevel, final BlockPos connectorPosition, @Nullable final UUID otherSubLevelId, @Nullable final BlockPos otherConnectorPosition) {
+            final boolean removed;
+            if (otherSubLevelId != null && otherConnectorPosition != null) {
+                removed = this.dockConnections.remove(DockConnection.of(subLevel.getUniqueId(), connectorPosition, otherSubLevelId, otherConnectorPosition));
+            } else {
+                removed = this.dockConnections.removeIf(connection -> connection.containsEndpoint(subLevel.getUniqueId(), connectorPosition));
+            }
+
+            if (removed) {
+                final ServerSubLevelContainer container = SubLevelContainer.getContainer(this.level);
+                if (container != null) {
+                    syncViewAlignmentComponent(container, subLevel);
+                }
+            }
+        }
+
+        private void forgetDockConnectionsFor(final UUID subLevelId) {
+            this.dockConnections.removeIf(connection -> connection.containsSubLevel(subLevelId));
+        }
+
+        private @Nullable ServerSubLevel resolveAttachedSource(final ServerSubLevelContainer container, final ServerSubLevel seedSubLevel, final Predicate<ServerSubLevel> predicate) {
+            for (final ServerSubLevel subLevel : this.getDockComponent(container, seedSubLevel)) {
+                if (predicate.test(subLevel)) {
+                    return subLevel;
+                }
+            }
+            return null;
+        }
+
+        private List<ServerSubLevel> getDockComponent(final ServerSubLevelContainer container, final ServerSubLevel seedSubLevel) {
+            final List<ServerSubLevel> component = new ArrayList<>();
+            final Set<UUID> visited = new HashSet<>();
+            final ArrayDeque<UUID> queue = new ArrayDeque<>();
+            queue.add(seedSubLevel.getUniqueId());
+
+            while (!queue.isEmpty()) {
+                final UUID subLevelId = queue.removeFirst();
+                if (!visited.add(subLevelId)) {
+                    continue;
+                }
+
+                final SubLevel subLevel = container.getSubLevel(subLevelId);
+                if (!(subLevel instanceof final ServerSubLevel serverSubLevel) || serverSubLevel.isRemoved()) {
+                    continue;
+                }
+                component.add(serverSubLevel);
+
+                for (final UUID neighborId : this.getDockNeighbors(subLevelId)) {
+                    if (!visited.contains(neighborId)) {
+                        queue.add(neighborId);
+                    }
+                }
+            }
+
+            return component;
+        }
+
+        private List<UUID> getDockNeighbors(final UUID subLevelId) {
+            final List<UUID> neighbors = new ArrayList<>();
+            for (final DockConnection connection : this.dockConnections) {
+                final UUID neighbor = connection.otherSubLevel(subLevelId);
+                if (neighbor != null) {
+                    neighbors.add(neighbor);
+                }
+            }
+            neighbors.sort(Comparator.comparing(UUID::toString));
+            return neighbors;
         }
 
         private void resolvePending(final ServerSubLevelContainer container) {
@@ -693,7 +837,7 @@ public final class SableSpacePhysics {
             }
 
             for (final ServerSubLevel subLevel : container.getAllSubLevels()) {
-                if (subLevel.isRemoved() || !this.optedIn.contains(subLevel.getUniqueId()) || !isStationKeeping(subLevel)) {
+                if (subLevel.isRemoved() || resolveStationKeepingSource(subLevel) == null) {
                     continue;
                 }
                 applyStationKeeping(physicsSystem, subLevel, timeStep);
@@ -766,6 +910,58 @@ public final class SableSpacePhysics {
 
             final ForceTotal forceTotal = subLevel.getOrCreateQueuedForceGroup(ForceGroups.LEVITATION.get()).getForceTotal();
             forceTotal.applyLinearImpulse(localImpulse);
+        }
+    }
+
+    private record DockEndpoint(UUID subLevelId, BlockPos connectorPosition) {
+        private DockEndpoint {
+            connectorPosition = connectorPosition.immutable();
+        }
+
+        private int compareTo(final DockEndpoint other) {
+            final int subLevelComparison = this.subLevelId.compareTo(other.subLevelId);
+            if (subLevelComparison != 0) {
+                return subLevelComparison;
+            }
+            final int xComparison = Integer.compare(this.connectorPosition.getX(), other.connectorPosition.getX());
+            if (xComparison != 0) {
+                return xComparison;
+            }
+            final int yComparison = Integer.compare(this.connectorPosition.getY(), other.connectorPosition.getY());
+            if (yComparison != 0) {
+                return yComparison;
+            }
+            return Integer.compare(this.connectorPosition.getZ(), other.connectorPosition.getZ());
+        }
+    }
+
+    private record DockConnection(DockEndpoint first, DockEndpoint second) {
+        private static DockConnection of(final UUID firstSubLevelId, final BlockPos firstConnectorPosition, final UUID secondSubLevelId, final BlockPos secondConnectorPosition) {
+            final DockEndpoint firstEndpoint = new DockEndpoint(firstSubLevelId, firstConnectorPosition);
+            final DockEndpoint secondEndpoint = new DockEndpoint(secondSubLevelId, secondConnectorPosition);
+            return firstEndpoint.compareTo(secondEndpoint) <= 0 ? new DockConnection(firstEndpoint, secondEndpoint) : new DockConnection(secondEndpoint, firstEndpoint);
+        }
+
+        private boolean containsSubLevel(final UUID subLevelId) {
+            return this.first.subLevelId().equals(subLevelId) || this.second.subLevelId().equals(subLevelId);
+        }
+
+        private boolean containsEndpoint(final UUID subLevelId, final BlockPos connectorPosition) {
+            return matches(this.first, subLevelId, connectorPosition) || matches(this.second, subLevelId, connectorPosition);
+        }
+
+        private @Nullable UUID otherSubLevel(final UUID subLevelId) {
+            if (this.first.subLevelId().equals(subLevelId)) {
+                return this.second.subLevelId();
+            }
+            if (this.second.subLevelId().equals(subLevelId)) {
+                return this.first.subLevelId();
+            }
+            return null;
+        }
+
+        private static boolean matches(final DockEndpoint endpoint, final UUID subLevelId, final BlockPos connectorPosition) {
+            return endpoint.subLevelId().equals(subLevelId) && endpoint.connectorPosition().equals(connectorPosition);
         }
     }
 }

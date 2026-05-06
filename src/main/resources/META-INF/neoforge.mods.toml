@@ -53,3 +53,10 @@ type = "optional"
 versionRange = "[1.2.1,)"
 ordering = "AFTER"
 side = "BOTH"
+
+[[dependencies.${mod_id}]]
+modId = "simulated"
+type = "optional"
+versionRange = "[1.2.1,)"
+ordering = "AFTER"
+side = "BOTH"

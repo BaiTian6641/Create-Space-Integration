@@ -39,13 +39,13 @@ public final class SpaceIntegrationConfig {
             .comment("Rotate player/entity orientation through Sable's custom entity-orientation hook while reference-plane view alignment is active.")
             .define("entityOrientationEnabled", true);
         REFERENCE_FRAME_FORCES_ENABLED = builder
-            .comment("Apply the experimental alpha.20 moving-reference-frame carrier velocity and pseudo-force terms. Disabled in the alpha.21 reset path.")
+            .comment("Apply the experimental alpha.20 moving-reference-frame carrier velocity and pseudo-force terms. Disabled in the alpha.22 dock-inheritance path.")
             .define("referenceFrameForcesEnabled", false);
         ANCHORED_ENTITY_PSEUDO_FORCES_ENABLED = builder
             .comment("Apply centrifugal, Coriolis, and Euler pseudo-forces to entities already anchored to a Sable sub-level surface. Keep disabled for stable station-relative standing.")
             .define("anchoredEntityPseudoForcesEnabled", false);
         FREE_FLIGHT_ARTIFICIAL_GRAVITY_ENABLED = builder
-            .comment("Apply reference-plane artificial gravity to airborne living entities so the alpha.21 reset behaves like a normal switched local-gravity frame.")
+            .comment("Apply reference-plane artificial gravity to airborne living entities so the alpha.22 path behaves like a normal switched local-gravity frame.")
             .define("freeFlightArtificialGravityEnabled", true);
         REFERENCE_PLANE_ACCELERATION = builder
             .comment("Acceleration in blocks per tick squared applied along the opted-in station's effective artificial down vector while surface-contacted, and optionally while airborne.")
