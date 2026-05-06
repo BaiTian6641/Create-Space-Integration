@@ -1,0 +1,19 @@
+{
+  "itemGroup.create_space_integration.main": "Create Space Integration",
+  "block.create_space_integration.station_gravity_controller": "Station Gravity Controller",
+  "block.create_space_integration.station_gravity_controller.enabled": "Station gravity controller enabled: %s.",
+  "block.create_space_integration.station_gravity_controller.mode": "Station gravity controller mode: %s.",
+  "block.create_space_integration.station_gravity_controller.applied": "Applied station gravity settings to sub-level %s.",
+  "block.create_space_integration.station_gravity_controller.no_sublevel": "Place this controller on a Sable sub-level in an Ad Astra zero-gravity dimension.",
+  "command.create_space_integration.no_sublevel": "You are not currently on a Sable sub-level.",
+  "command.create_space_integration.opt_in": "Marked sub-level %s for Create Space Integration.",
+  "command.create_space_integration.opt_out": "Removed Create Space Integration state from sub-level %s.",
+  "command.create_space_integration.station_keeping": "Station keeping for sub-level %s is now %s.",
+  "command.create_space_integration.reference_plane": "Reference-plane gravity for sub-level %s is now %s.",
+  "command.create_space_integration.view_alignment": "View alignment for sub-level %s is now %s.",
+  "command.create_space_integration.gravity_mode": "Gravity mode for sub-level %s is now %s.",
+  "command.create_space_integration.gravity_strength": "Gravity strength for sub-level %s is now %s.",
+  "command.create_space_integration.gravity_radius": "Gravity radius for sub-level %s is now %s blocks.",
+  "command.create_space_integration.gravity_axis": "Gravity axis for sub-level %s now starts at your local position and points along %s.",
+  "command.create_space_integration.status": "Sub-level %s: opt-in=%s, station_keeping=%s, reference_plane=%s, view_alignment=%s, gravity_mode=%s, gravity_strength=%s, gravity_radius=%s."
+}
