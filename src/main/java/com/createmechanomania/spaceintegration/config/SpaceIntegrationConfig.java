@@ -39,13 +39,13 @@ public final class SpaceIntegrationConfig {
             .comment("Rotate player/entity orientation through Sable's custom entity-orientation hook while reference-plane view alignment is active.")
             .define("entityOrientationEnabled", true);
         REFERENCE_FRAME_FORCES_ENABLED = builder
-            .comment("Apply the experimental alpha.20 moving-reference-frame carrier velocity and pseudo-force terms. Disabled in the alpha.22 dock-inheritance path.")
+            .comment("Apply the experimental alpha.20 moving-reference-frame carrier velocity and pseudo-force terms. Disabled in the alpha.24 dock-inheritance path; supported contact still receives a narrow tangent carrier correction.")
             .define("referenceFrameForcesEnabled", false);
         ANCHORED_ENTITY_PSEUDO_FORCES_ENABLED = builder
             .comment("Apply centrifugal, Coriolis, and Euler pseudo-forces to entities already anchored to a Sable sub-level surface. Keep disabled for stable station-relative standing.")
             .define("anchoredEntityPseudoForcesEnabled", false);
         FREE_FLIGHT_ARTIFICIAL_GRAVITY_ENABLED = builder
-            .comment("Apply reference-plane artificial gravity to airborne living entities so the alpha.22 path behaves like a normal switched local-gravity frame.")
+            .comment("Apply reference-plane artificial gravity to airborne living entities so the alpha.24 path behaves like a normal switched local-gravity frame.")
             .define("freeFlightArtificialGravityEnabled", true);
         REFERENCE_PLANE_ACCELERATION = builder
             .comment("Acceleration in blocks per tick squared applied along the opted-in station's effective artificial down vector while surface-contacted, and optionally while airborne.")
@@ -57,7 +57,7 @@ public final class SpaceIntegrationConfig {
             .comment("Maximum airborne speed in blocks per tick along the artificial down vector when freeFlightArtificialGravityEnabled is true.")
                 .defineInRange("referencePlaneTerminalSpeed", 3.5D, 0.1D, 20.0D);
         FRAME_VELOCITY_MATCH_LIMIT = builder
-            .comment("Maximum per-tick velocity correction used to keep entities moving with their Sable sub-level frame.")
+            .comment("Maximum per-tick tangent velocity correction used to keep supported entities moving with their Sable sub-level frame.")
             .defineInRange("frameVelocityMatchLimit", 0.45D, 0.0D, 5.0D);
         CENTRIFUGAL_FORCE_SCALE = builder
             .comment("Scale for the rotating-frame centrifugal acceleration term.")

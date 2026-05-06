@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ReferencePlaneGravity {
     private static final double MIN_ACCELERATION = 1.0E-6D;
     private static final double MIN_VECTOR = 1.0E-8D;
+    private static final double SECONDS_PER_TICK = 1.0D / 20.0D;
     private static final int SUPPORT_GRACE_TICKS = 4;
     private static final Map<UUID, SurfaceSupportState> SURFACE_SUPPORT_STATES = new ConcurrentHashMap<>();
 
@@ -63,7 +64,10 @@ public final class ReferencePlaneGravity {
 
         final Vec3 currentDelta = entity.getDeltaMovement();
         final Vector3d velocity = new Vector3d(currentDelta.x, currentDelta.y, currentDelta.z);
-        final boolean changed = applyArtificialDown(livingEntity, sourceSubLevel, down, supportUp, velocity);
+        boolean changed = applyArtificialDown(livingEntity, sourceSubLevel, down, supportUp, velocity);
+        if (surfaceSupport) {
+            changed |= matchSupportedFrameVelocity(livingEntity, bodySubLevel, sourceSubLevel, supportUp, velocity);
+        }
 
         livingEntity.fallDistance = 0.0F;
         if (changed) {
@@ -112,6 +116,64 @@ public final class ReferencePlaneGravity {
         }
 
         return false;
+    }
+
+    private static boolean matchSupportedFrameVelocity(final Entity entity, final ServerSubLevel bodySubLevel, final ServerSubLevel sourceSubLevel, final Vector3dc supportUp, final Vector3d velocity) {
+        final ServerSubLevel motionSubLevel = getCarrierMotionSubLevel(bodySubLevel, sourceSubLevel);
+        if (motionSubLevel == null) {
+            return false;
+        }
+
+        final SableSpacePhysics.FrameMotion motion = SableSpacePhysics.getFrameMotion(motionSubLevel);
+        if (motion == null) {
+            return false;
+        }
+
+        final Vector3d supportNormal = new Vector3d(supportUp);
+        if (supportNormal.lengthSquared() <= MIN_VECTOR) {
+            return false;
+        }
+        supportNormal.normalize();
+
+        final Vector3d carrierVelocity = getCarrierVelocity(entity, motionSubLevel, motion, new Vector3d());
+        projectOntoPlane(carrierVelocity, supportNormal);
+        if (carrierVelocity.lengthSquared() <= MIN_VECTOR) {
+            return false;
+        }
+
+        final Vector3d carrierDirection = new Vector3d(carrierVelocity).normalize();
+        final Vector3d currentTangent = projectOntoPlane(new Vector3d(velocity), supportNormal);
+        final double missingCarrierSpeed = carrierVelocity.dot(carrierDirection) - currentTangent.dot(carrierDirection);
+        if (missingCarrierSpeed <= MIN_ACCELERATION) {
+            return false;
+        }
+
+        final double correctionSpeed = Math.min(missingCarrierSpeed, SpaceIntegrationConfig.frameVelocityMatchLimit());
+        if (correctionSpeed <= MIN_ACCELERATION) {
+            return false;
+        }
+
+        velocity.fma(correctionSpeed, carrierDirection);
+        return true;
+    }
+
+    private static @Nullable ServerSubLevel getCarrierMotionSubLevel(final ServerSubLevel bodySubLevel, final ServerSubLevel sourceSubLevel) {
+        if (SableSpacePhysics.getFrameMotion(bodySubLevel) != null) {
+            return bodySubLevel;
+        }
+        return sourceSubLevel.getUniqueId().equals(bodySubLevel.getUniqueId()) || SableSpacePhysics.getFrameMotion(sourceSubLevel) == null ? null : sourceSubLevel;
+    }
+
+    private static Vector3d getCarrierVelocity(final Entity entity, final ServerSubLevel motionSubLevel, final SableSpacePhysics.FrameMotion motion, final Vector3d destination) {
+        final Vector3d globalPosition = SableSpacePhysics.getGlobalPosition(entity, motionSubLevel, new Vector3d());
+        final Vector3d radius = globalPosition.sub(motionSubLevel.logicalPose().position(), new Vector3d());
+        final Vector3d angularVelocity = motion.angularVelocity(new Vector3d());
+        final Vector3d angularCarrier = angularVelocity.cross(radius, new Vector3d());
+        return motion.linearVelocity(destination).add(angularCarrier).mul(SECONDS_PER_TICK);
+    }
+
+    private static Vector3d projectOntoPlane(final Vector3d vector, final Vector3dc normal) {
+        return vector.fma(-vector.dot(normal), normal);
     }
 
     private static @Nullable Vector3d rememberSurfaceSupport(final Entity entity, final ServerSubLevel bodySubLevel, final Vector3dc down) {
